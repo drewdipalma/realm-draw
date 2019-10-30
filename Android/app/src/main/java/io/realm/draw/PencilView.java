@@ -22,7 +22,7 @@ import android.graphics.Paint;
 import android.util.AttributeSet;
 import android.widget.ImageView;
 
-public class PencilView extends ImageView {
+public class PencilView extends android.support.v7.widget.AppCompatImageView {
     private boolean selected;
     private float density;
 

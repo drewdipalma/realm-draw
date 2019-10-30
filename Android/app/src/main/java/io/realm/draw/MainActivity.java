@@ -25,6 +25,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -46,10 +47,7 @@ import io.realm.draw.models.DrawPath;
 import io.realm.draw.models.DrawPoint;
 import io.realm.draw.sensor.ShakeSensorEventListener;
 
-
 public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback, View.OnClickListener {
-    private static final String REALM_URL = "realm://" + BuildConfig.OBJECT_SERVER_IP + ":9080/~/Draw";
-    private static final String AUTH_URL = "http://" + BuildConfig.OBJECT_SERVER_IP + ":9080/auth";
     private static final String ID = "demo@realm.io";
     private static final String PASSWORD = "password";
     private static final int EDGE_WIDTH = 683;
@@ -89,19 +87,18 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         final SyncCredentials syncCredentials = SyncCredentials.usernamePassword(ID, PASSWORD, false);
 
         // Assume user exist already first time. If that fails, create it.
-        SyncUser.loginAsync(syncCredentials, AUTH_URL, new SyncUser.Callback<SyncUser>() {
+        SyncUser.logInAsync(syncCredentials, Constants.AUTH_URL, new SyncUser.Callback<SyncUser>() {
             @Override
             public void onSuccess(SyncUser user) {
-                final SyncConfiguration syncConfiguration = new SyncConfiguration.Builder(user, REALM_URL).build();
-                Realm.setDefaultConfiguration(syncConfiguration);
-                realm = Realm.getDefaultInstance();
+                final SyncConfiguration config = user.createConfiguration(Constants.REALM_URL).build();
+                realm = Realm.getInstance(config);
             }
 
             @Override
             public void onError(ObjectServerError error) {
                 if (error.getErrorCode() == ErrorCode.INVALID_CREDENTIALS) {
                     // User did not exist, create it
-                    SyncUser.loginAsync(SyncCredentials.usernamePassword(ID, PASSWORD, true), AUTH_URL, this);
+                    SyncUser.logInAsync(SyncCredentials.usernamePassword(ID, PASSWORD, true), Constants.AUTH_URL, this);
                 } else {
                     String errorMsg = String.format("(%s) %s", error.getErrorCode(), error.getErrorMessage());
                     Toast.makeText(getApplicationContext(), errorMsg, Toast.LENGTH_LONG).show();
@@ -186,6 +183,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     }
 
     private void wipeCanvas() {
+        Log.d("Wipe", "Canvas Wiped");
         if(realm != null) {
             realm.executeTransactionAsync(new Realm.Transaction() {
                 @Override
@@ -226,6 +224,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             double pointY = (y - marginTop - viewLocation[1]) * ratio;
 
             if (action == MotionEvent.ACTION_DOWN) {
+                Log.d("Drawing", "Started");
                 realm.beginTransaction();
                 currentPath = realm.createObject(DrawPath.class);
                 currentPath.setColor(currentColor);
@@ -233,16 +232,19 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
                 point.setX(pointX);
                 point.setY(pointY);
                 currentPath.getPoints().add(point);
+                Log.d("Drawing", "Path: " + currentPath);
                 realm.commitTransaction();
             } else if (action == MotionEvent.ACTION_MOVE) {
                 realm.beginTransaction();
                 DrawPoint point = realm.createObject(DrawPoint.class);
                 point.setX(pointX);
                 point.setY(pointY);
+                Log.d("Drawing", "Path (Move): " + currentPath);
                 currentPath.getPoints().add(point);
                 realm.commitTransaction();
             } else if (action == MotionEvent.ACTION_UP) {
                 realm.beginTransaction();
+                Log.d("Drawing", "Path (Up): " + currentPath);
                 currentPath.setCompleted(true);
                 DrawPoint point = realm.createObject(DrawPoint.class);
                 point.setX(pointX);
@@ -251,6 +253,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
                 realm.commitTransaction();
                 currentPath = null;
             } else {
+                Log.d("Drawing", "Path (Other): " + currentPath);
                 realm.beginTransaction();
                 currentPath.setCompleted(true);
                 realm.commitTransaction();
@@ -317,6 +320,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         private Realm bgRealm;
 
         public void shutdown() {
+            Log.d("Drawing Thread", "Shutdown");
             synchronized(this) {
                 if (bgRealm != null) {
                     bgRealm.stopWaitForChange();
@@ -358,10 +362,12 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
             while (!isInterrupted()) {
                 try {
+                    Log.d("BG Drawing Thread", "Running");
                     final SurfaceHolder holder = surfaceView.getHolder();
                     canvas = holder.lockCanvas();
 
                     synchronized (holder) {
+                        Log.d("BG Drawing Thread", "Updating");
                         canvas.drawColor(Color.WHITE);
                         final Paint paint = new Paint();
                         for (DrawPath drawPath : results) {
